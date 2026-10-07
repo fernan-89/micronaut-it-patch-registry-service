@@ -1,0 +1,4359 @@
+{
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "// Automatically generate standard W3C traceparent (ADR-010) and X-Trace-Id",
+          "function generateHex(len) {",
+          "    let result = '';",
+          "    const chars = '0123456789abcdef';",
+          "    for (let i = 0; i < len; i++) {",
+          "        result += chars.charAt(Math.floor(Math.random() * chars.length));",
+          "    }",
+          "    return result;",
+          "}",
+          "const traceId = generateHex(32);",
+          "const spanId = generateHex(16);",
+          "const traceparent = `00-${traceId}-${spanId}-01`;",
+          "pm.request.headers.upsert({ key: 'traceparent', value: traceparent });",
+          "pm.request.headers.upsert({ key: 'X-Trace-Id', value: traceId });",
+          "pm.environment.set('currentTraceId', traceId);"
+        ],
+        "type": "text/javascript"
+      }
+    }
+  ],
+  "info": {
+    "_exporter_id": "39879181",
+    "_postman_id": "b4c6e8a0-3d5f-4b7c-9e1a-0d2f4a6b8c1e",
+    "description": "Enterprise-grade E2E Postman Suite for the IT Patch Registry Service Domain (BIAN-aligned, ADR-001/005/013/019/030/031/032/033). Creates a patch policy (days allowed for a critical, high, medium and low patch), reads and lists it, reports a fresh patch within its deadline, the same patch again (200, the stored finding, what was reported again changes nothing) and a critical patch already past its deadline, and shows how the policy judges itself when read: COMPLIANT with one open patch within time, OVERDUE with the deadline that was missed, a waiver in force taking the patch out of the count, the waiver withdrawn, the patch applied and the policy COMPLIANT again, an applied patch never reopened by a repeated report. It updates the definition, pauses and resumes the policy, lists findings newest announcement first with filters and a limit, and reads both audit ledgers in order. A second folder proves the registry is staff only (a REQUESTER gets 403 ERR-PCH-00403 on every route). A third covers the negative guarantees: validation (blank or long name, missing asset, days out of range or out of order, malformed identifiers, missing tenant or executor), duplicate names (409) on create and on rename, illegal transitions, updating a paused policy, findings that are inconsistent (a reference that is a sentence, an unknown severity, a patch announced in the future, applied before it was announced, a waiver that is free text, in the past or longer than a year), a finding for a policy that is not the tenant's, tenant isolation, limits of the list, and the absence of DELETE, with RFC 7807 error_code assertions. It files everything under its own generated tenant id (pchOrganisationId). A waiver running out by itself, and the race of simultaneous reports of one patch, are proved by the unit tests and by the platform smoke (patch-smoke).",
+    "name": "IT Patch Registry Service - Patch Policy Suite",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Health status is UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Health Check (Aggregated)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ],
+              "raw": "{{base_url}}/health"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Liveness status is UP or UNKNOWN (no probe contributors registered)', () => pm.expect(['UP', 'UNKNOWN']).to.include(pm.response.json().status));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Liveness Probe",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "liveness"
+              ],
+              "raw": "{{base_url}}/health/liveness"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Readiness status is UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Readiness Probe",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "readiness"
+              ],
+              "raw": "{{base_url}}/health/readiness"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Contains JVM metrics', () => pm.expect(pm.response.text()).to.include('jvm_memory'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Prometheus Metrics",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "prometheus"
+              ],
+              "raw": "{{base_url}}/prometheus"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns Swagger UI HTML', () => pm.expect(pm.response.text()).to.include('swagger-ui'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Swagger UI",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "swagger-ui",
+                "index.html"
+              ],
+              "raw": "{{base_url}}/swagger-ui/index.html"
+            }
+          }
+        }
+      ],
+      "name": "00. Infrastructure & Telemetry"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.environment.set('pchOrganisationId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.environment.set('pchOtherTenantId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.environment.set('pchUserId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.environment.set('pchAssetId', pm.variables.replaceIn('{{$guid}}'));",
+                  "const now = Date.now();",
+                  "const days = (d) => new Date(now - d * 24 * 3600 * 1000).toISOString();",
+                  "const minutes = (m) => new Date(now + m * 60 * 1000).toISOString();",
+                  "pm.environment.set('annFresh', days(1));",
+                  "pm.environment.set('annLate', days(5));",
+                  "pm.environment.set('annOld', days(20));",
+                  "pm.environment.set('annAncient', days(60));",
+                  "pm.environment.set('annFuture', minutes(60));",
+                  "pm.environment.set('appliedNow', minutes(0));",
+                  "pm.environment.set('beforeAnnounce', days(100));",
+                  "pm.environment.set('waiveEnd', new Date(now + 10 * 24 * 3600 * 1000).toISOString());",
+                  "pm.environment.set('waiveShort', new Date(now + 3 * 1000).toISOString());",
+                  "pm.environment.set('waivePast', days(1));",
+                  "pm.environment.set('waiveTooLong', new Date(now + 400 * 24 * 3600 * 1000).toISOString());"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('ACTIVE, COMPLIANT with nothing open', () => {",
+                  "    pm.expect(json.id).to.not.be.undefined;",
+                  "    pm.expect(json.status).to.eql('ACTIVE');",
+                  "    pm.expect(json.compliance).to.eql('COMPLIANT');",
+                  "    pm.expect(json.openFindings).to.eql(0);",
+                  "    pm.expect(json.criticalDays).to.eql(2);",
+                  "});",
+                  "pm.environment.set('policyId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "01. Initiate a patch policy (ACTIVE, nothing open yet)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Servers\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('The policy is the tenant\\'s own', () => {",
+                  "    pm.expect(json.id).to.eql(pm.environment.get('policyId'));",
+                  "    pm.expect(json.organisationId).to.eql(pm.environment.get('pchOrganisationId'));",
+                  "    pm.expect(json.assetId).to.eql(pm.environment.get('pchAssetId'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "02. Retrieve the policy by ID",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Only ours', () => { pm.expect(json).to.have.lengthOf(1); pm.expect(json[0].id).to.eql(pm.environment.get('policyId')); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "03. List policies filtered by status, asset and compliance",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "ACTIVE"
+                },
+                {
+                  "key": "assetId",
+                  "value": "{{pchAssetId}}"
+                },
+                {
+                  "key": "compliance",
+                  "value": "COMPLIANT"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/retrieve?status=ACTIVE&assetId={{pchAssetId}}&compliance=COMPLIANT"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('PENDING, due 7 days after the announcement, not overdue', () => {",
+                  "    pm.expect(json.status).to.eql('PENDING');",
+                  "    pm.expect(json.severity).to.eql('HIGH');",
+                  "    pm.expect(json.overdue).to.be.false;",
+                  "    pm.expect(new Date(json.dueAt).getTime()).to.eql(new Date(pm.environment.get('annFresh')).getTime() + 7 * 24 * 3600 * 1000);",
+                  "    pm.expect(json.reportedBy).to.eql('scanner-1');",
+                  "});",
+                  "pm.environment.set('freshFindingId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "04. A scanner reports a fresh high patch (201, within its 7 days)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{policyId}}\",\n  \"patchRef\": \"KB5030211\",\n  \"severity\": \"HIGH\",\n  \"announcedAt\": \"{{annFresh}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Open 1, overdue 0', () => {",
+                  "    pm.expect(json.compliance).to.eql('COMPLIANT');",
+                  "    pm.expect(json.openFindings).to.eql(1);",
+                  "    pm.expect(json.overdueFindings).to.eql(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "05. One open patch within time: still COMPLIANT",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('It is the same finding, and what was reported again changes nothing', () => {",
+                  "    pm.expect(json.id).to.eql(pm.environment.get('freshFindingId'));",
+                  "    pm.expect(json.severity).to.eql('HIGH');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "06. The same patch reported again (200, the stored finding)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{policyId}}\",\n  \"patchRef\": \"KB5030211\",\n  \"severity\": \"CRITICAL\",\n  \"announcedAt\": \"{{annOld}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Critical gets 2 days: due 3 days ago, overdue', () => {",
+                  "    pm.expect(json.overdue).to.be.true;",
+                  "    pm.expect(new Date(json.dueAt).getTime()).to.eql(new Date(pm.environment.get('annLate')).getTime() + 2 * 24 * 3600 * 1000);",
+                  "});",
+                  "pm.environment.set('lateFindingId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "07. A scanner reports a critical patch announced 5 days ago (201, already overdue)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{policyId}}\",\n  \"patchRef\": \"CVE-2026-1234\",\n  \"severity\": \"CRITICAL\",\n  \"announcedAt\": \"{{annLate}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('OVERDUE, 2 open, 1 overdue, with the deadline that was missed', () => {",
+                  "    pm.expect(json.compliance).to.eql('OVERDUE');",
+                  "    pm.expect(json.openFindings).to.eql(2);",
+                  "    pm.expect(json.overdueFindings).to.eql(1);",
+                  "    pm.expect(new Date(json.oldestOverdueDueAt).getTime()).to.eql(new Date(pm.environment.get('annLate')).getTime() + 2 * 24 * 3600 * 1000);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "08. An open patch past its deadline makes the policy OVERDUE",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Ours is the one', () => { pm.expect(json).to.have.lengthOf(1); pm.expect(json[0].id).to.eql(pm.environment.get('policyId')); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "09. List policies by compliance (OVERDUE)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "compliance",
+                  "value": "OVERDUE"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/retrieve?compliance=OVERDUE"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "10. Staff waive the overdue patch (accepted risk, 10 days)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"ACCEPTED_RISK\",\n  \"until\": \"{{waiveEnd}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{lateFindingId}}",
+                "control",
+                "waive"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{lateFindingId}}/control/waive"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('WAIVED, ACCEPTED_RISK, not overdue while the waiver lasts', () => {",
+                  "    pm.expect(json.status).to.eql('WAIVED');",
+                  "    pm.expect(json.waiverReason).to.eql('ACCEPTED_RISK');",
+                  "    pm.expect(new Date(json.waivedUntil).getTime()).to.eql(new Date(pm.environment.get('waiveEnd')).getTime());",
+                  "    pm.expect(json.overdue).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "11. The finding is WAIVED with its fixed reason and end",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{lateFindingId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{lateFindingId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Open 1, overdue 0, waived 1', () => {",
+                  "    pm.expect(json.compliance).to.eql('COMPLIANT');",
+                  "    pm.expect(json.openFindings).to.eql(1);",
+                  "    pm.expect(json.waivedFindings).to.eql(1);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "12. A waiver in force takes it out of the count: COMPLIANT again",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "13. Staff withdraw the waiver (back to PENDING)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{lateFindingId}}",
+                "control",
+                "unwaive"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{lateFindingId}}/control/unwaive"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('OVERDUE again', () => { pm.expect(json.compliance).to.eql('OVERDUE'); pm.expect(json.overdueFindings).to.eql(1); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "14. Without the waiver it is OVERDUE again",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "15. The update agent reports the late patch applied (204, now)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "update-agent-1"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{lateFindingId}}",
+                "control",
+                "apply"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{lateFindingId}}/control/apply"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('APPLIED with the time it was applied', () => {",
+                  "    pm.expect(json.status).to.eql('APPLIED');",
+                  "    pm.expect(json.appliedAt).to.not.be.undefined;",
+                  "    pm.expect(json.overdue).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "16. The finding is APPLIED and no longer overdue",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{lateFindingId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{lateFindingId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('COMPLIANT, 1 open (the fresh one)', () => { pm.expect(json.compliance).to.eql('COMPLIANT'); pm.expect(json.openFindings).to.eql(1); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "17. Everything applied or within time: COMPLIANT",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Still APPLIED', () => pm.expect(pm.response.json().status).to.eql('APPLIED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "18. Report the applied patch again (200, still APPLIED: it is never reopened)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{policyId}}\",\n  \"patchRef\": \"CVE-2026-1234\",\n  \"severity\": \"CRITICAL\",\n  \"announcedAt\": \"{{annLate}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Two findings, the fresh one first', () => {",
+                  "    pm.expect(json).to.have.lengthOf(2);",
+                  "    pm.expect(json[0].id).to.eql(pm.environment.get('freshFindingId'));",
+                  "    pm.expect(json[1].id).to.eql(pm.environment.get('lateFindingId'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "19. List the findings of the policy, newest announcement first",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "policyId",
+                  "value": "{{policyId}}"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/retrieve?policyId={{policyId}}"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Only the applied critical one', () => { pm.expect(json).to.have.lengthOf(1); pm.expect(json[0].id).to.eql(pm.environment.get('lateFindingId')); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "20. List the findings by status and severity, limited to one",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "policyId",
+                  "value": "{{policyId}}"
+                },
+                {
+                  "key": "status",
+                  "value": "APPLIED"
+                },
+                {
+                  "key": "severity",
+                  "value": "CRITICAL"
+                },
+                {
+                  "key": "limit",
+                  "value": "1"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/retrieve?policyId={{policyId}}&status=APPLIED&severity=CRITICAL&limit=1"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "21. Update the definition (a tighter high of 3 days)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Servers, tighter\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 3,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "update"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "22. Pause the policy",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "control",
+                "pause"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/control/pause"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('PAUSED, renamed, new days kept', () => {",
+                  "    pm.expect(json.status).to.eql('PAUSED');",
+                  "    pm.expect(json.compliance).to.eql('PAUSED');",
+                  "    pm.expect(json.name).to.eql('Servers, tighter');",
+                  "    pm.expect(json.highDays).to.eql(3);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "23. A paused policy is not judged",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "24. Resume the policy",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "control",
+                "resume"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/control/resume"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('INITIATED, UPDATED, PAUSED, RESUMED, each by an executor', () => {",
+                  "    pm.expect(json.map(e => e.action)).to.eql(['INITIATED', 'UPDATED', 'PAUSED', 'RESUMED']);",
+                  "    json.forEach(e => pm.expect(e.executor).to.be.a('string').that.is.not.empty);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "25. Read the policy audit ledger in order",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "audit-log",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/audit-log/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('REPORTED, WAIVED, UNWAIVED, APPLIED', () => pm.expect(json.map(e => e.action)).to.eql(['REPORTED', 'WAIVED', 'UNWAIVED', 'APPLIED']));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "26. Read the finding audit ledger in order",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{lateFindingId}}",
+                "audit-log",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{lateFindingId}}/audit-log/retrieve"
+            }
+          }
+        }
+      ],
+      "name": "01. Patch Policy Lifecycle (BIAN Behavior Qualifiers)"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "01. A REQUESTER cannot create a policy (403)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Requester attempt\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "02. A REQUESTER cannot read a policy (403)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "03. A REQUESTER cannot list policies (403)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "04. A REQUESTER cannot update a policy (403)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Requester attempt\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "update"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "05. A REQUESTER cannot pause a policy (403)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "control",
+                "pause"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/control/pause"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "06. A REQUESTER cannot read an audit trail (403)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "audit-log",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/audit-log/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "07. A REQUESTER cannot report a finding (403)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{policyId}}\",\n  \"patchRef\": \"KB1\",\n  \"severity\": \"LOW\",\n  \"announcedAt\": \"{{annFresh}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "08. A REQUESTER cannot read a finding (403)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{lateFindingId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{lateFindingId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "09. A REQUESTER cannot list findings (403)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "10. A REQUESTER cannot apply, waive or unwaive (403)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}",
+                "control",
+                "apply"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/control/apply"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "11. A REQUESTER cannot waive (403)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"ACCEPTED_RISK\",\n  \"until\": \"{{waiveEnd}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}",
+                "control",
+                "waive"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/control/waive"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "12. A REQUESTER cannot read a finding audit trail (403)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}",
+                "audit-log",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/audit-log/retrieve"
+            }
+          }
+        }
+      ],
+      "name": "02. Staff Only (REQUESTER refused)"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('secondPolicyId', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "00. Setup: a second policy of the tenant, to be renamed onto a taken name",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Second policy\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "01. Initiate - Blank name (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "02. Initiate - Name over 80 characters (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "03. Initiate - Missing the asset (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"n\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "04. Initiate - Zero days for critical (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"n\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 0,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "05. Initiate - More than 730 days (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"n\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 731\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "06. Initiate - A critical patch given more time than a high one (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"n\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 10,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "07. Initiate - A medium patch given more time than a low one (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"n\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 100,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "08. Initiate - Malformed asset id (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"n\",\n  \"assetId\": \"not-a-uuid\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "09. Initiate - Missing X-Tenant-Id (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"notenant\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "10. Initiate - Malformed X-Tenant-Id (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"badtenant\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "not-a-uuid"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "11. Initiate - The same name twice in one tenant (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Servers, tighter\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "12. Initiate - The same name in another tenant is fine (201)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Servers, tighter\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOtherTenantId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "13. Update - Rename onto a name that is taken (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Servers, tighter\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{secondPolicyId}}",
+                "update"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{secondPolicyId}}/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "14. Update - Days out of order (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"n\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 10,\n  \"highDays\": 7,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "update"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "15. Resume an ACTIVE policy is an illegal transition (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "control",
+                "resume"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/control/resume"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "16. Control: pause, for the next case",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "control",
+                "pause"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/control/pause"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "17. Pause a PAUSED policy is an illegal transition (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "control",
+                "pause"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/control/pause"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "18. Update a PAUSED policy is allowed (204)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Servers, tighter\",\n  \"assetId\": \"{{pchAssetId}}\",\n  \"criticalDays\": 2,\n  \"highDays\": 3,\n  \"mediumDays\": 30,\n  \"lowDays\": 90\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "update"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "19. Control: resume, leaving the policy ACTIVE",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "control",
+                "resume"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/control/resume"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "20. Retrieve - Non-existent policy (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "00000000-0000-0000-0000-000000000000",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/00000000-0000-0000-0000-000000000000/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "21. Retrieve - Malformed UUID path (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "not-a-uuid",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/not-a-uuid/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "22. Retrieve - Another tenant answers like a missing one (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOtherTenantId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "23. Pause - Another tenant (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOtherTenantId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "control",
+                "pause"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/control/pause"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "24. Audit trail - Another tenant (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOtherTenantId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}",
+                "audit-log",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}/audit-log/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "25. List policies - Unknown compliance (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "compliance",
+                  "value": "BOGUS"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/retrieve?compliance=BOGUS"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Not allowed', () => pm.expect([404, 405]).to.include(pm.response.code));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "26. Delete - There is no DELETE (404 or 405)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "DELETE",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "{{policyId}}"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/{{policyId}}"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "27. Report a finding - A reference that is a sentence, not an identifier (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{policyId}}\",\n  \"patchRef\": \"disk /dev/sda1 is full\",\n  \"severity\": \"LOW\",\n  \"announcedAt\": \"{{annFresh}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "28. Report a finding - A reference over 64 characters (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{policyId}}\",\n  \"patchRef\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n  \"severity\": \"LOW\",\n  \"announcedAt\": \"{{annFresh}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "29. Report a finding - An unknown severity (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{policyId}}\",\n  \"patchRef\": \"KB9\",\n  \"severity\": \"SEVERE\",\n  \"announcedAt\": \"{{annFresh}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "30. Report a finding - A patch announced in the future (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{policyId}}\",\n  \"patchRef\": \"KB9\",\n  \"severity\": \"LOW\",\n  \"announcedAt\": \"{{annFuture}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "31. Report a finding - Missing the announcement (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{policyId}}\",\n  \"patchRef\": \"KB9\",\n  \"severity\": \"LOW\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "32. Report a finding - Missing the policy (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patchRef\": \"KB9\",\n  \"severity\": \"LOW\",\n  \"announcedAt\": \"{{annFresh}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "33. Report a finding - Missing X-Executor (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{policyId}}\",\n  \"patchRef\": \"KB9\",\n  \"severity\": \"LOW\",\n  \"announcedAt\": \"{{annFresh}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.environment.set('otherPolicyId', pm.variables.replaceIn('{{$guid}}'));"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "34. Report a finding - A policy that is not the tenant's (404)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyId\": \"{{otherPolicyId}}\",\n  \"patchRef\": \"KB9\",\n  \"severity\": \"LOW\",\n  \"announcedAt\": \"{{annFresh}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "35. Retrieve a finding - Non-existent finding (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "00000000-0000-0000-0000-000000000000",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/00000000-0000-0000-0000-000000000000/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "36. Retrieve a finding - Another tenant answers like a missing one (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOtherTenantId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "37. Retrieve a finding - Malformed UUID path (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "not-a-uuid",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/not-a-uuid/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "38. Apply - Another tenant (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOtherTenantId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}",
+                "control",
+                "apply"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/control/apply"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "39. Apply an already APPLIED finding is an illegal transition (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "update-agent-1"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{lateFindingId}}",
+                "control",
+                "apply"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{lateFindingId}}/control/apply"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "40. Waive an APPLIED finding is an illegal transition (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"ACCEPTED_RISK\",\n  \"until\": \"{{waiveEnd}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{lateFindingId}}",
+                "control",
+                "waive"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{lateFindingId}}/control/waive"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-PCH-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "41. Unwaive a finding that is not waived is an illegal transition (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}",
+                "control",
+                "unwaive"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/control/unwaive"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "42. Apply - Before the patch was announced (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appliedAt\": \"{{beforeAnnounce}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "scanner-1"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}",
+                "control",
+                "apply"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/control/apply"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('The answer does not repeat what was sent', () => pm.expect(pm.response.text()).to.not.include('hunter2'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "43. Waive - A reason that is free text (400, not repeated)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"the CEO said so, password=hunter2\",\n  \"until\": \"{{waiveEnd}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}",
+                "control",
+                "waive"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/control/waive"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "44. Waive - An end in the past (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"ACCEPTED_RISK\",\n  \"until\": \"{{waivePast}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}",
+                "control",
+                "waive"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/control/waive"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "45. Waive - More than a year (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"ACCEPTED_RISK\",\n  \"until\": \"{{waiveTooLong}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}",
+                "control",
+                "waive"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/control/waive"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "46. Waive - Missing the reason (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"until\": \"{{waiveEnd}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}",
+                "control",
+                "waive"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/control/waive"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "47. List findings - A limit of zero (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "0"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/retrieve?limit=0"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "48. List findings - A limit over 200 (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "201"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/retrieve?limit=201"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "49. List findings - Unknown status (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "BOGUS"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/retrieve?status=BOGUS"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Nothing of ours', () => pm.expect(pm.response.json().some(f => f.id === pm.environment.get('freshFindingId'))).to.be.false);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "50. List findings - Another tenant sees none",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOtherTenantId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Not allowed', () => pm.expect([404, 405]).to.include(pm.response.code));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "51. Findings cannot be deleted: no DELETE (404 or 405)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "DELETE",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "finding",
+                "{{freshFindingId}}"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}"
+            }
+          }
+        }
+      ],
+      "name": "03. Negative Tests & Guarantees"
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8106"
+    }
+  ]
+}
