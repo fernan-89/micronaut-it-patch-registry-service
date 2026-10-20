@@ -191,6 +191,20 @@ class PatchFindingMongoAdapterTest {
     }
 
     @Test
+    @DisplayName("the findings changed since a moment are the tenant's, of any status, updated at or after it")
+    void changedSince() {
+        finds(finding());
+        PatchFindingMongoRepositoryAdapter adapter = new PatchFindingMongoRepositoryAdapter(client, URI);
+
+        StepVerifier.create(adapter.findChangedSince(tenant, Instant.parse("2026-10-01T00:00:00Z"))).expectNextCount(1).verifyComplete();
+
+        ArgumentCaptor<Bson> filter = ArgumentCaptor.forClass(Bson.class);
+        verify(collection).find(filter.capture());
+        String text = filter.getValue().toString();
+        assertTrue(text.contains("organisationId") && text.contains("updatedAt") && text.contains("$gte") && !text.contains("status"));
+    }
+
+    @Test
     @DisplayName("the unresolved findings are everything not applied, for the tenant or for one policy")
     void unresolved() {
         PatchFinding finding = finding();

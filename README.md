@@ -34,6 +34,7 @@ and, with platform security on, comes from the verified token.
 |---|---|
 | initiate | `POST /it-patch-registry/v1/initiate` `{"name":"Servers","assetId":"<uuid>","criticalDays":2,"highDays":7,"mediumDays":30,"lowDays":90}` |
 | retrieve | `GET /it-patch-registry/v1/{id}/retrieve` (judged now) |
+| promises/retrieve | `GET /it-patch-registry/v1/promises/retrieve?changedWithinDays=&limit=` (the promises contract, ADR-034: every broken promise and every one that changed lately, each with `verdict`, a fixed `code` when broken, `status` and `changedAt`) |
 | retrieve (collection) | `GET /it-patch-registry/v1/retrieve?status=&assetId=&compliance=` (oldest first) |
 | update | `PUT /it-patch-registry/v1/{id}/update` (the whole definition again, in any status) |
 | control/pause · control/resume | `PUT /it-patch-registry/v1/{id}/control/pause` · `.../resume` |
@@ -70,7 +71,7 @@ finding: PENDING -> APPLIED (terminal)
 ## Architecture decisions
 
 001 hexagonal architecture · 005 UUID identity sovereignty and audit tracing · 013 BIAN conventions · 019 HTTP 409 for state conflicts ·
-030 the scanner reports, the registry keeps the findings · 031 the promise is judged when read · 032 staff only · 033 guarded writes and unique backstops.
+030 the scanner reports, the registry keeps the findings · 031 the promise is judged when read · 032 staff only · 033 guarded writes and unique backstops · 034 the promises contract.
 
 ## License
 

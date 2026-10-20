@@ -101,6 +101,11 @@ public class PatchFindingMongoRepositoryAdapter implements PatchFindingRepositor
     }
 
     @Override
+    public Flux<PatchFinding> findChangedSince(UUID organisationId, Instant since) {
+        return Flux.from(getCollection().find(Filters.and(Filters.eq(FIELD_ORGANISATION, organisationId), Filters.gte("updatedAt", since)))).map(PatchFindingPersistenceMapper::toDomain);
+    }
+
+    @Override
     public Flux<PatchFinding> findUnresolved(UUID organisationId, UUID policyId) {
         List<Bson> conditions = new ArrayList<>();
         conditions.add(Filters.eq(FIELD_ORGANISATION, organisationId));

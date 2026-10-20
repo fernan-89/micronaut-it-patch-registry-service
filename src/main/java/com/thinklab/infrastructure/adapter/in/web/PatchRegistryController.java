@@ -5,9 +5,11 @@ import com.thinklab.application.dto.request.InitiatePatchPolicyRequest;
 import com.thinklab.application.dto.request.ReportPatchFindingRequest;
 import com.thinklab.application.dto.request.UpdatePatchPolicyRequest;
 import com.thinklab.application.dto.request.WaivePatchFindingRequest;
+import com.thinklab.application.dto.response.PromiseResponse;
 import com.thinklab.application.dto.response.AuditEntryResponse;
 import com.thinklab.application.dto.response.PatchFindingResponse;
 import com.thinklab.application.dto.response.PatchPolicyResponse;
+import com.thinklab.application.usecase.RetrievePromisesUseCase;
 import com.thinklab.application.usecase.ControlPatchFindingUseCase;
 import com.thinklab.application.usecase.ControlPatchPolicyUseCase;
 import com.thinklab.application.usecase.InitiatePatchPolicyUseCase;
@@ -73,10 +75,14 @@ public class PatchRegistryController {
     private final ControlPatchFindingUseCase controlFinding;
     private final RetrievePatchFindingAuditLogUseCase findingAuditLog;
 
+    private final RetrievePromisesUseCase retrievePromises;
+
     public PatchRegistryController(InitiatePatchPolicyUseCase initiatePolicy, RetrievePatchPolicyUseCase retrievePolicy, RetrievePatchPoliciesUseCase retrievePolicies,
                                    UpdatePatchPolicyUseCase updatePolicy, ControlPatchPolicyUseCase controlPolicy, RetrievePatchPolicyAuditLogUseCase policyAuditLog,
                                    ReportPatchFindingUseCase reportFinding, RetrievePatchFindingUseCase retrieveFinding, RetrievePatchFindingsUseCase retrieveFindings,
-                                   ControlPatchFindingUseCase controlFinding, RetrievePatchFindingAuditLogUseCase findingAuditLog) {
+                                   ControlPatchFindingUseCase controlFinding, RetrievePatchFindingAuditLogUseCase findingAuditLog,
+            RetrievePromisesUseCase retrievePromises) {
+        this.retrievePromises = retrievePromises;
         this.initiatePolicy = initiatePolicy;
         this.retrievePolicy = retrievePolicy;
         this.retrievePolicies = retrievePolicies;
@@ -114,6 +120,16 @@ public class PatchRegistryController {
     public Mono<List<PatchPolicyResponse>> retrieveAll(@Header(TENANT_HEADER) @NotBlank String tenantId, @Header(ROLE_HEADER) @Nullable String role,
                                                        @QueryValue @Nullable PolicyStatus status, @QueryValue @Nullable UUID assetId, @QueryValue @Nullable Compliance compliance) {
         return Mono.defer(() -> retrievePolicies.execute(UUID.fromString(tenantId), status, assetId, compliance, role).collectList());
+    }
+
+    /**
+     * Behavior Qualifier: {@code promises/retrieve} (platform ADR-001, the promises contract). Every broken promise and every one that changed within the days asked
+     * (30 unless asked, 1 to 365), at most {@code limit} of each (500 unless asked, at most 1000).
+     */
+    @Get("/promises/retrieve")
+    public Mono<List<PromiseResponse>> promises(@Header(TENANT_HEADER) @NotBlank String tenantId, @Header(ROLE_HEADER) @Nullable String role,
+                                                @QueryValue @Nullable Integer changedWithinDays, @QueryValue @Nullable Integer limit) {
+        return Mono.defer(() -> retrievePromises.execute(UUID.fromString(tenantId), changedWithinDays, limit, role));
     }
 
     /** Behavior Qualifier: {@code update}. The whole definition again. */

@@ -123,6 +123,18 @@ public class PatchPolicy {
         };
     }
 
+    /**
+     * Whether the policy's promise is being kept at {@code now} (platform ADR-001): broken ({@code PATCH_OVERDUE}) when an open finding is past its deadline, kept
+     * when none is, not judged when the policy is paused.
+     */
+    public Promise promise(Instant now, Collection<PatchFinding> findings) {
+        return switch (assess(now, findings).compliance()) {
+            case OVERDUE -> Promise.broken("PATCH_OVERDUE");
+            case COMPLIANT -> Promise.kept();
+            case PAUSED -> Promise.notJudged();
+        };
+    }
+
     /** When a finding of this policy must be applied by. */
     public Instant dueAt(PatchFinding finding) {
         return finding.getAnnouncedAt().plus(Duration.ofDays(daysFor(finding.getSeverity())));

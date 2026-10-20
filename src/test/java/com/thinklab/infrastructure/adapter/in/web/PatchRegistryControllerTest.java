@@ -19,6 +19,8 @@ import com.thinklab.application.usecase.RetrievePatchFindingsUseCase;
 import com.thinklab.application.usecase.RetrievePatchPoliciesUseCase;
 import com.thinklab.application.usecase.RetrievePatchPolicyAuditLogUseCase;
 import com.thinklab.application.usecase.RetrievePatchPolicyUseCase;
+import com.thinklab.application.usecase.RetrievePromisesUseCase;
+import com.thinklab.application.dto.response.PromiseResponse;
 import com.thinklab.application.usecase.UpdatePatchPolicyUseCase;
 import com.thinklab.domain.model.PatchFinding.FindingStatus;
 import com.thinklab.domain.model.PatchFinding.WaiverReason;
@@ -65,10 +67,11 @@ class PatchRegistryControllerTest {
     @Mock private RetrievePatchFindingsUseCase retrieveFindings;
     @Mock private ControlPatchFindingUseCase controlFinding;
     @Mock private RetrievePatchFindingAuditLogUseCase findingAuditLog;
+    @Mock private RetrievePromisesUseCase retrievePromises;
 
     private PatchRegistryController controller() {
         return new PatchRegistryController(initiatePolicy, retrievePolicy, retrievePolicies, updatePolicy, controlPolicy, policyAuditLog, reportFinding, retrieveFinding,
-                retrieveFindings, controlFinding, findingAuditLog);
+                retrieveFindings, controlFinding, findingAuditLog, retrievePromises);
     }
 
     private PatchPolicyResponse policyResponse() {
@@ -156,5 +159,13 @@ class PatchRegistryControllerTest {
         StepVerifier.create(controller().apply(id, tenantHeader, EXECUTOR, ROLE, null)).assertNext(response -> assertEquals(HttpStatus.NO_CONTENT, response.getStatus())).verifyComplete();
         StepVerifier.create(controller().waive(id, tenantHeader, EXECUTOR, ROLE, waive)).assertNext(response -> assertEquals(HttpStatus.NO_CONTENT, response.getStatus())).verifyComplete();
         StepVerifier.create(controller().unwaive(id, tenantHeader, EXECUTOR, ROLE)).assertNext(response -> assertEquals(HttpStatus.NO_CONTENT, response.getStatus())).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the promises route passes the tenant, the role and the two parameters (platform ADR-001)")
+    void promises() {
+        when(retrievePromises.execute(tenant, 7, 50, ROLE)).thenReturn(Mono.just(List.of(new PromiseResponse(UUID.randomUUID(), "P", null, "KEPT", null, "ACTIVE", now))));
+
+        StepVerifier.create(controller().promises(tenantHeader, ROLE, 7, 50)).assertNext(promises -> assertEquals(1, promises.size())).verifyComplete();
     }
 }
