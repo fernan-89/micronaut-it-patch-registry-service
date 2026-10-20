@@ -32,6 +32,22 @@ class PatchPolicyTest {
     }
 
     @Test
+    @DisplayName("the promise is broken (PATCH_OVERDUE) when an open finding is past its deadline, kept otherwise, and not judged when paused (platform ADR-001)")
+    void promise() {
+        PatchPolicy active = policy();
+        PatchFinding overdue = finding(active, Severity.CRITICAL, now.minus(Duration.ofDays(3)));
+        PatchFinding inside = finding(active, Severity.LOW, now.minus(Duration.ofDays(3)));
+
+        assertEquals(Promise.broken("PATCH_OVERDUE"), active.promise(now, List.of(overdue, inside)));
+        assertEquals(Promise.kept(), active.promise(now, List.of(inside)));
+        assertEquals(Promise.kept(), active.promise(now, List.of()));
+        active.pause("op");
+        assertEquals(Promise.notJudged(), active.promise(now, List.of(overdue)));
+        assertEquals(Promise.Verdict.BROKEN, Promise.broken("X").verdict());
+        assertEquals("X", Promise.broken("X").code());
+    }
+
+    @Test
     @DisplayName("a new policy is ACTIVE with one INITIATED entry; the trail cannot be changed from outside")
     void createNew() {
         PatchPolicy policy = policy();

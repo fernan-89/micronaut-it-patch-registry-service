@@ -7,6 +7,7 @@ import com.thinklab.domain.model.Severity;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /** Outbound Port for PatchFinding persistence. {@link #save} is a guarded write on the status loaded (ADR-033); every lookup is tenant-scoped. */
@@ -25,6 +26,9 @@ public interface PatchFindingRepository {
 
     /** The tenant's findings, newest announcement first, at most {@code limit}. */
     Flux<PatchFinding> findAll(UUID organisationId, Filter filter, int limit);
+
+    /** Every finding of the tenant, of any status, that changed at or after that moment (reported, applied, waived, a waiver ended): what can recover or break a policy's promise. */
+    Flux<PatchFinding> findChangedSince(UUID organisationId, Instant since);
 
     /** Every finding of the tenant that is not APPLIED (what a policy is judged on), for the whole tenant or for one policy. */
     Flux<PatchFinding> findUnresolved(UUID organisationId, UUID policyId);

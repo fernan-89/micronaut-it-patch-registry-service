@@ -1369,6 +1369,97 @@
               "raw": "{{base_url}}/it-patch-registry/v1/finding/{{lateFindingId}}/audit-log/retrieve"
             }
           }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Ours is there, once, with a verdict and no code unless broken', () => {",
+                  "    const ours = json.filter((x) => x.id === pm.environment.get('policyId'));",
+                  "    pm.expect(ours).to.have.lengthOf(1);",
+                  "    pm.expect(['KEPT', 'BROKEN', 'NOT_JUDGED']).to.include(ours[0].verdict);",
+                  "    pm.expect(ours[0].verdict === 'BROKEN' ? typeof ours[0].code === 'string' : ours[0].code == null).to.be.true;",
+                  "    pm.expect(ours[0].name).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(ours[0].status).to.be.a('string').that.is.not.empty;",
+                  "    pm.expect(new Date(ours[0].changedAt).getTime()).to.be.a('number').that.is.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "21. Promises: every item with its verdict, a fixed code only when broken, its status and when it changed (promises contract)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "promises",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/promises/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('At most one broken and one changed', () => pm.expect(pm.response.json().length).to.be.at.most(2));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "21. Promises: a window of one day and a limit of one are accepted",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "promises",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "changedWithinDays",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "1"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/promises/retrieve?changedWithinDays=1&limit=1"
+            }
+          }
         }
       ],
       "name": "01. Patch Policy Lifecycle (BIAN Behavior Qualifiers)"
@@ -1987,6 +2078,51 @@
                 "retrieve"
               ],
               "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}/audit-log/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-PCH-00403', () => pm.expect(json.error_code).to.eql('ERR-PCH-00403'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "A REQUESTER cannot read the promises (403)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{pchUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "promises",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/promises/retrieve"
             }
           }
         }
@@ -4343,6 +4479,210 @@
                 "{{freshFindingId}}"
               ],
               "raw": "{{base_url}}/it-patch-registry/v1/finding/{{freshFindingId}}"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Promises - A window of zero days (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "promises",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "changedWithinDays",
+                  "value": "0"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/promises/retrieve?changedWithinDays=0"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Promises - A window over 365 days (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "promises",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "changedWithinDays",
+                  "value": "366"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/promises/retrieve?changedWithinDays=366"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Promises - A limit of zero (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "promises",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "0"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/promises/retrieve?limit=0"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Promises - A limit over 1000 (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "promises",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1001"
+                }
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/promises/retrieve?limit=1001"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Nothing of ours', () => pm.expect(pm.response.json().filter((x) => x.id === pm.environment.get('policyId'))).to.have.lengthOf(0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Promises - Another tenant sees none of ours",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{pchOtherTenantId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-patch-registry",
+                "v1",
+                "promises",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-patch-registry/v1/promises/retrieve"
             }
           }
         }
